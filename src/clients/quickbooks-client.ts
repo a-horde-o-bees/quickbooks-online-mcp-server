@@ -188,6 +188,16 @@ class QuickbooksClient {
       const authResponse = await this.oauthClient.refreshUsingToken(this.refreshToken);
       
       this.accessToken = authResponse.token.access_token;
+      // QBO-MCP-EXTENSION:refresh-writeback:begin
+      // intuit-oauth's bundled type declaration for refreshUsingToken's token
+      // omits refresh_token, but the runtime response includes it (Intuit
+      // rotates ~24-26h). Cast to any to access the field.
+      const newRefreshToken = (authResponse.token as any).refresh_token;
+      if (newRefreshToken && newRefreshToken !== this.refreshToken) {
+        this.refreshToken = newRefreshToken;
+        this.saveTokensToEnv();
+      }
+      // QBO-MCP-EXTENSION:refresh-writeback:end
       
       // Calculate expiry time
       const expiresIn = authResponse.token.expires_in || 3600; // Default to 1 hour
@@ -236,6 +246,18 @@ class QuickbooksClient {
     return this.quickbooksInstance;
   }
   
+  // QBO-MCP-EXTENSION:force-reauth:begin
+  // Force a fresh OAuth consent flow, discarding any in-memory token state.
+  // Used by auth-server to recover from server-side token invalidation that
+  // would otherwise short-circuit authenticate() into a doomed refresh.
+  async forceReauth(): Promise<void> {
+    this.refreshToken = undefined;
+    this.realmId = undefined;
+    this.accessToken = undefined;
+    this.accessTokenExpiry = undefined;
+    await this.authenticate();
+  }
+
   getQuickbooks() {
     if (!this.quickbooksInstance) {
       throw new Error('Quickbooks not authenticated. Call authenticate() first');

@@ -28,7 +28,11 @@ async function main() {
 
   try {
     // The authenticate method will trigger the OAuth flow if no tokens exist
-    await quickbooksClient.authenticate();
+    // QBO-MCP-EXTENSION:force-reauth:begin
+    // Bypass authenticate()'s stale-token short-circuit so npm run auth can
+    // recover after server-side invalidation.
+    await quickbooksClient.forceReauth();
+    // QBO-MCP-EXTENSION:force-reauth:end
 
     console.log('\n✓ Successfully authenticated with QuickBooks!');
     console.log('Tokens have been saved to your .env file.');
