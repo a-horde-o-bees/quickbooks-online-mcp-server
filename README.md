@@ -30,6 +30,8 @@ This MCP server provides complete QuickBooks Online API integration for Claude C
 - **TypeScript** - Full type safety with Zod validation
 - **Tested** - Jest test suite with ESM support
 
+> Note: this is a local MCP server. It runs as a stdio subprocess on the developer's or partner's machine and authenticates to a QuickBooks Online company.
+
 ---
 
 ## Quick Start
@@ -62,6 +64,11 @@ QUICKBOOKS_CLIENT_SECRET=your_client_secret
 QUICKBOOKS_ENVIRONMENT=sandbox
 QUICKBOOKS_REFRESH_TOKEN=your_refresh_token
 QUICKBOOKS_REALM_ID=your_realm_id
+
+# Optional: restrict which tool categories are registered (default: all enabled)
+# QUICKBOOKS_DISABLE_WRITE=true    # suppress create_* tools
+# QUICKBOOKS_DISABLE_UPDATE=true   # suppress update_* tools
+# QUICKBOOKS_DISABLE_DELETE=true   # suppress delete_* tools
 ```
 
 `.env` is gitignored so your real credentials stay local.
@@ -81,12 +88,17 @@ Add to your Claude Code MCP configuration:
         "QUICKBOOKS_CLIENT_SECRET": "your_client_secret",
         "QUICKBOOKS_REFRESH_TOKEN": "your_refresh_token",
         "QUICKBOOKS_REALM_ID": "your_realm_id",
-        "QUICKBOOKS_ENVIRONMENT": "sandbox"
+        "QUICKBOOKS_ENVIRONMENT": "sandbox",
+        "QUICKBOOKS_DISABLE_WRITE": "false",
+        "QUICKBOOKS_DISABLE_UPDATE": "false",
+        "QUICKBOOKS_DISABLE_DELETE": "false"
       }
     }
   }
 }
 ```
+
+Set any of the `DISABLE_*` flags to `"true"` to prevent that category of tools from being registered. Read tools (`get_*`, `search_*`) are always available.
 
 ---
 
@@ -347,32 +359,49 @@ Complete CRUD operations are available for all entity types:
 
 ## Authentication
 
-### Getting QuickBooks API Credentials
+This server uses OAuth 2.0 to authenticate to a QuickBooks Online company. You'll set up an app on the [Intuit Developer Portal](https://developer.intuit.com/) and connect it to either a **sandbox** (for development) or your **production** QBO company.
 
-1. Go to the [Intuit Developer Portal](https://developer.intuit.com/)
-2. Create a new app or select an existing one
-3. Get the **Client ID** and **Client Secret** from the app's keys section
-4. Add `http://localhost:8000/callback` to the app's Redirect URIs
+### Important: Sandbox vs Production
 
-### Option 1: Using Environment Variables (Recommended)
+| Mode | When to use | Redirect URI accepted | Setup difficulty |
+|------|-------------|------------------------|------------------|
+| **Sandbox** | Development, testing, demos | `http://localhost:8000/callback` works | Easy |
+| **Production** | Real company data | Localhost **rejected** — must be a public HTTPS URL | Harder (see below) |
 
-If you have existing tokens:
+If you only want to read your own company's data, you still need to set up an app — Intuit does not offer per-user API keys. There is no shortcut around the OAuth + app-creation flow.
+
+### Sandbox Setup (recommended for first run)
+
+1. Go to the [Intuit Developer Portal](https://developer.intuit.com/) and create a new app
+2. Open the app → **Settings** (left sidebar) → **Redirect URIs** → add: `http://localhost:8000/callback`
+3. Get your **Client ID** and **Client Secret** from the app's **Keys & Credentials** page (Development keys)
+4. Create or use a sandbox company under the **Sandbox** top-level menu item in the dev portal
+5. Set `QUICKBOOKS_ENVIRONMENT=sandbox` in your `.env`
+6. Run `npm run auth` to complete the OAuth handshake — your browser will open, you sign in to the sandbox company, tokens are saved to `.env`
+
+### Production Setup
+
+The Intuit Developer Portal **rejects `http://localhost` redirect URIs in production mode** — every contributor hits this. Two known workarounds:
+
+1. **ngrok tunnel (most common):** run `ngrok http 8000`, then on your Intuit app go to **Settings → Redirect URIs** and add the generated `https://<id>.ngrok-free.app/callback` URL. Use that URL for the OAuth handshake, then revert to localhost afterwards.
+2. **Deploy a small public callback handler** (e.g., on a VPS or serverless function) that captures the auth code and hands it back to your local setup. More involved; only needed if you can't use ngrok.
+
+After completing the production OAuth handshake, the refresh token is what matters — once it's in `.env`, you no longer need the public redirect URL for day-to-day use. Refresh tokens auto-rotate; the server persists the new token on each refresh.
+
+### Once you have tokens
 
 ```env
 QUICKBOOKS_CLIENT_ID=your_client_id
 QUICKBOOKS_CLIENT_SECRET=your_client_secret
 QUICKBOOKS_REFRESH_TOKEN=your_refresh_token
 QUICKBOOKS_REALM_ID=your_realm_id
-QUICKBOOKS_ENVIRONMENT=sandbox
+QUICKBOOKS_ENVIRONMENT=sandbox  # or 'production'
 ```
 
-### Option 2: OAuth Flow
+### Common pitfalls
 
-If you don't have tokens, the server can initiate an OAuth flow that:
-- Starts a temporary local server
-- Opens your browser for authentication
-- Saves tokens to your `.env` file
-- Closes automatically when complete
+- **`.env` loaded from the wrong directory.** The server resolves `.env` relative to the compiled module, not your shell's CWD. If you launch via Claude Desktop, this matters — make sure you're on current `main`.
+- **Redirect URI mismatch.** The URI you register in the Intuit portal must match **exactly** — protocol, host, port, path. `http://localhost:8000/callback` .
 
 ---
 
@@ -441,6 +470,19 @@ If you encounter connection errors:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Tool naming convention
+
+All tool names must follow the `{verb}_{entity}` convention using underscores. The verb prefix determines CRUD Restriction Mode behaviour:
+
+| Prefix | Category | Suppressed by |
+|--------|----------|---------------|
+| `create_` | WRITE | `QUICKBOOKS_DISABLE_WRITE=true` |
+| `update_` | UPDATE | `QUICKBOOKS_DISABLE_UPDATE=true` |
+| `delete_` | DELETE | `QUICKBOOKS_DISABLE_DELETE=true` |
+| `get_`, `search_`, `read_` | READ | never |
+
+New tools that do not follow this convention will not be correctly categorised and may appear or be suppressed unexpectedly.
 
 ---
 

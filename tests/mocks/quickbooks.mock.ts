@@ -200,7 +200,6 @@ export const mockQuickBooksInstance = {
   reportProfitAndLoss: jest.fn(),
   reportCashFlow: jest.fn(),
   reportTrialBalance: jest.fn(),
-  reportGeneralLedger: jest.fn(),
   reportGeneralLedgerDetail: jest.fn(),
   reportCustomerSales: jest.fn(),
   reportItemSales: jest.fn(),
@@ -214,11 +213,25 @@ export const mockQuickBooksInstance = {
   reportSalesTaxLiability: jest.fn(),
 };
 
-// Mock QuickBooks client
+// Mock QuickBooks client (instance)
 export const mockQuickbooksClient = {
   authenticate: jest.fn<() => Promise<typeof mockQuickBooksInstance>>().mockResolvedValue(mockQuickBooksInstance),
   getQuickbooks: jest.fn<() => typeof mockQuickBooksInstance>().mockReturnValue(mockQuickBooksInstance),
   refreshAccessToken: jest.fn<() => Promise<{ access_token: string; expires_in: number }>>().mockResolvedValue({ access_token: 'mock-token', expires_in: 3600 }),
+};
+
+// Mock QuickbooksClient class (for handlers using QuickbooksClient.getInstance()
+// and QuickbooksClient.getAuthCredentials() — the latter is used by handlers
+// that need raw OAuth credentials for QBO endpoints not wrapped by
+// node-quickbooks, e.g. POST /upload for binary attachments).
+export const mockAuthCredentials = {
+  accessToken: 'mock-access-token',
+  realmId: 'mock-realm-id',
+  isSandbox: true,
+};
+export const mockQuickbooksClientClass = {
+  getInstance: jest.fn<() => Promise<typeof mockQuickBooksInstance>>().mockResolvedValue(mockQuickBooksInstance),
+  getAuthCredentials: jest.fn<() => Promise<typeof mockAuthCredentials>>().mockResolvedValue(mockAuthCredentials),
 };
 
 // Helper to create a successful callback mock
@@ -256,4 +269,8 @@ export function resetAllMocks() {
   mockQuickbooksClient.getQuickbooks.mockReset();
   (mockQuickbooksClient.getQuickbooks as any).mockReturnValue(mockQuickBooksInstance);
   (mockQuickbooksClient.authenticate as any).mockResolvedValue(mockQuickBooksInstance);
+  mockQuickbooksClientClass.getInstance.mockReset();
+  (mockQuickbooksClientClass.getInstance as any).mockResolvedValue(mockQuickBooksInstance);
+  mockQuickbooksClientClass.getAuthCredentials.mockReset();
+  (mockQuickbooksClientClass.getAuthCredentials as any).mockResolvedValue(mockAuthCredentials);
 }
