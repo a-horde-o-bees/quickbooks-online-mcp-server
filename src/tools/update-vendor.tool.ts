@@ -1,3 +1,8 @@
+// QBO-MCP-EXTENSION:vendor-tools — full replacement of upstream update-vendor.
+// Same defects + fix as the create-vendor overlay: relax schema to z.any() and
+// read `args.params.vendor` instead of `args.vendor` so payloads survive the
+// MCP SDK's params-wrapping.
+
 import { updateQuickbooksVendor } from "../handlers/update-quickbooks-vendor.handler.js";
 import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
@@ -5,31 +10,11 @@ import { z } from "zod";
 const toolName = "update-vendor";
 const toolDescription = "Update a vendor in QuickBooks Online.";
 const toolSchema = z.object({
-  vendor: z.object({
-    Id: z.string(),
-    SyncToken: z.string(),
-    DisplayName: z.string(),
-    GivenName: z.string().optional(),
-    FamilyName: z.string().optional(),
-    CompanyName: z.string().optional(),
-    PrimaryEmailAddr: z.object({
-      Address: z.string().optional(),
-    }).optional(),
-    PrimaryPhone: z.object({
-      FreeFormNumber: z.string().optional(),
-    }).optional(),
-    BillAddr: z.object({
-      Line1: z.string().optional(),
-      City: z.string().optional(),
-      Country: z.string().optional(),
-      CountrySubDivisionCode: z.string().optional(),
-      PostalCode: z.string().optional(),
-    }).optional(),
-  }),
+  vendor: z.any(),
 });
 
-const toolHandler = async (args: { [x: string]: any }) => {
-  const response = await updateQuickbooksVendor(args.vendor);
+const toolHandler = async (args: any) => {
+  const response = await updateQuickbooksVendor(args.params.vendor);
 
   if (response.isError) {
     return {
@@ -42,14 +27,12 @@ const toolHandler = async (args: { [x: string]: any }) => {
     };
   }
 
-  const vendor = response.result;
-
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(vendor),
-      }
+        text: JSON.stringify(response.result),
+      },
     ],
   };
 };
@@ -59,4 +42,4 @@ export const UpdateVendorTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
-}; 
+};
