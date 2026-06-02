@@ -169,6 +169,9 @@ export const mockQuickBooksInstance = {
   updatePaymentMethod: jest.fn(),
   findPaymentMethods: jest.fn(),
 
+  // Budget methods (read-only in QBO v3 API)
+  findBudgets: jest.fn(),
+
   // TaxCode methods
   getTaxCode: jest.fn(),
   findTaxCodes: jest.fn(),
@@ -198,6 +201,7 @@ export const mockQuickBooksInstance = {
   reportCashFlow: jest.fn(),
   reportTrialBalance: jest.fn(),
   reportGeneralLedger: jest.fn(),
+  reportGeneralLedgerDetail: jest.fn(),
   reportCustomerSales: jest.fn(),
   reportItemSales: jest.fn(),
   reportAgedReceivables: jest.fn(),
