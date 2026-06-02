@@ -76,6 +76,7 @@ import { GetPaymentTool } from "./tools/get-payment.tool.js";
 import { UpdatePaymentTool } from "./tools/update-payment.tool.js";
 import { DeletePaymentTool } from "./tools/delete-payment.tool.js";
 import { SearchPaymentsTool } from "./tools/search-payments.tool.js";
+import { BatchRequestTool } from "./tools/batch.tool.js";
 
 // Sales Receipt tools
 import { CreateSalesReceiptTool } from "./tools/create-sales-receipt.tool.js";
@@ -261,6 +262,7 @@ const main = async () => {
   RegisterTool(server, UpdateVendorTool);
   RegisterTool(server, DeleteVendorTool);
   RegisterTool(server, GetVendorTool);
+  RegisterTool(server, BatchRequestTool);
   RegisterTool(server, SearchVendorsTool);
 
   // Add tools for employees
