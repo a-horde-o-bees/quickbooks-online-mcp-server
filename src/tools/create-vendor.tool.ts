@@ -1,13 +1,3 @@
-// QBO-MCP-EXTENSION:vendor-tools — full replacement of upstream create-vendor.
-// Two upstream defects this overlay fixes:
-//   1. Schema declared `vendor: z.object({...})` with only 6 fields, silently
-//      stripping everything else (Active, Vendor1099, CurrencyRef, Notes,
-//      TermRef, Fax, WebAddr, PrintOnCheckName, etc.). Relaxed to z.any() to
-//      mirror create-customer's contract.
-//   2. Handler read `args.vendor` directly; the MCP SDK passes
-//      `{params: {vendor: ...}}` so the handler saw undefined. Aligned with
-//      create-customer's `args.params.vendor` access pattern.
-
 import { createQuickbooksVendor } from "../handlers/create-quickbooks-vendor.handler.js";
 import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
@@ -15,10 +5,15 @@ import { z } from "zod";
 const toolName = "create-vendor";
 const toolDescription = "Create a vendor in QuickBooks Online.";
 const toolSchema = z.object({
+  // OVERLAY (vendor-tools): relax to z.any(). Upstream's explicit schema lists
+  // only ~6 fields and silently strips the rest (Active, Vendor1099, TermRef,
+  // CurrencyRef, Notes, WebAddr, …); mirror the create-customer contract. The
+  // args.params unwrap is upstream's now (PR #22), so it's no longer part of
+  // this overlay — schema-relax is all that remains.
   vendor: z.any(),
 });
 
-const toolHandler = async (args: any) => {
+const toolHandler = async (args: { [x: string]: any }) => {
   const response = await createQuickbooksVendor(args.params.vendor);
 
   if (response.isError) {
@@ -32,12 +27,14 @@ const toolHandler = async (args: any) => {
     };
   }
 
+  const vendor = response.result;
+
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(response.result),
-      },
+        text: JSON.stringify(vendor),
+      }
     ],
   };
 };
@@ -47,4 +44,4 @@ export const CreateVendorTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
-};
+}; 

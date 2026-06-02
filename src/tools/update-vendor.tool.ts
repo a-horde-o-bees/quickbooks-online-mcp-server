@@ -1,8 +1,3 @@
-// QBO-MCP-EXTENSION:vendor-tools — full replacement of upstream update-vendor.
-// Same defects + fix as the create-vendor overlay: relax schema to z.any() and
-// read `args.params.vendor` instead of `args.vendor` so payloads survive the
-// MCP SDK's params-wrapping.
-
 import { updateQuickbooksVendor } from "../handlers/update-quickbooks-vendor.handler.js";
 import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
@@ -10,10 +5,15 @@ import { z } from "zod";
 const toolName = "update-vendor";
 const toolDescription = "Update a vendor in QuickBooks Online.";
 const toolSchema = z.object({
+  // OVERLAY (vendor-tools): relax to z.any(). Upstream's explicit schema lists
+  // only ~6 fields and silently strips the rest (Active, Vendor1099, TermRef,
+  // CurrencyRef, Notes, WebAddr, …); mirror the create-customer contract. The
+  // args.params unwrap is upstream's now (PR #22), so it's no longer part of
+  // this overlay — schema-relax is all that remains.
   vendor: z.any(),
 });
 
-const toolHandler = async (args: any) => {
+const toolHandler = async (args: { [x: string]: any }) => {
   const response = await updateQuickbooksVendor(args.params.vendor);
 
   if (response.isError) {
@@ -27,12 +27,14 @@ const toolHandler = async (args: any) => {
     };
   }
 
+  const vendor = response.result;
+
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(response.result),
-      },
+        text: JSON.stringify(vendor),
+      }
     ],
   };
 };
@@ -42,4 +44,4 @@ export const UpdateVendorTool: ToolDefinition<typeof toolSchema> = {
   description: toolDescription,
   schema: toolSchema,
   handler: toolHandler,
-};
+}; 
