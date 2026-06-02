@@ -1,13 +1,14 @@
 import { quickbooksClient } from "../clients/quickbooks-client.js";
 import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
-import { buildQuickbooksSearchCriteria } from "../helpers/build-quickbooks-search-criteria.js";
 
 export interface SearchPaymentsInput {
   customer_ref?: string;
   txn_date_from?: string;
   txn_date_to?: string;
   limit?: number;
+  offset?: number;
+  fetchAll?: boolean;
 }
 
 export async function searchQuickbooksPayments(data: SearchPaymentsInput): Promise<ToolResponse<any>> {
@@ -28,6 +29,12 @@ export async function searchQuickbooksPayments(data: SearchPaymentsInput): Promi
     }
     if (data.limit) {
       criteria.limit = data.limit;
+    }
+    if (data.offset) {
+      criteria.offset = data.offset;
+    }
+    if (data.fetchAll) {
+      criteria.fetchAll = true;
     }
 
     return new Promise((resolve) => {

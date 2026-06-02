@@ -86,11 +86,24 @@ const RUNTIME_CRITERIA_SCHEMA = z.union([
   advancedCriteriaSchema,
 ]);
 
-// Exposed schema for OpenAI/JSON – use broad schema to avoid deep $ref issues
-const toolSchema = z.object({ criteria: z.any() });
+// Exposed schema for OpenAI/JSON – use broad schema to avoid deep $ref issues.
+// OVERLAY (search-fetchall-fix): declare the sibling pagination options so the
+// MCP framework forwards them to the handler instead of stripping to `criteria`.
+const toolSchema = z.object({
+  criteria: z.any(),
+  asc: z.string().optional(),
+  desc: z.string().optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+  count: z.boolean().optional(),
+  fetchAll: z.boolean().optional(),
+});
 
 const toolHandler = async ({ params }: any) => {
-  const { criteria } = params;
+  // OVERLAY (search-fetchall-fix): capture sibling pagination options alongside
+  // `criteria`. Upstream destructured only `criteria`, dropping the sibling
+  // `fetchAll` clients send, so findItems capped at one 1000-row page.
+  const { criteria = [], ...options } = params ?? {};
 
   // Validate against runtime schema
   const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
@@ -102,7 +115,17 @@ const toolHandler = async ({ params }: any) => {
     };
   }
 
-  const response = await searchQuickbooksItems(criteria);
+  // Fold the sibling options into an advanced-options object the handler's
+  // buildQuickbooksSearchCriteria converts to the {field,value} pagination
+  // entries node-quickbooks honors (e.g. {field:"fetchAll",value:true}).
+  const criteriaToSend =
+    Object.keys(options).length === 0
+      ? criteria
+      : Array.isArray(criteria)
+        ? { filters: criteria, ...options }
+        : { ...(criteria ?? {}), ...options };
+
+  const response = await searchQuickbooksItems(criteriaToSend);
 
   if (response.isError) {
     return { content: [{ type: "text" as const, text: `Error searching items: ${response.error}` }] };

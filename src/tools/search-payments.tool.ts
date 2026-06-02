@@ -10,6 +10,8 @@ const toolSchema = z.object({
   txn_date_from: z.string().optional().describe("Filter by date from (YYYY-MM-DD)"),
   txn_date_to: z.string().optional().describe("Filter by date to (YYYY-MM-DD)"),
   limit: z.number().optional().describe("Maximum results to return"),
+  offset: z.number().optional().describe("Page offset for manual pagination"),
+  fetchAll: z.boolean().optional().describe("Auto-paginate to fetch all results (overrides limit)"),
 });
 
 const toolHandler = async ({ params }: any) => {

@@ -163,19 +163,41 @@ function normalizeAccountCriteria(criteria: any): any {
   return criteria;
 }
 
-// Schema exposed to function definition – use broad schema to sidestep $ref errors
+// Schema exposed to function definition – use broad schema to sidestep $ref errors.
+// OVERLAY (search-fetchall-fix): declare the sibling pagination options so the
+// MCP framework forwards them to the handler instead of stripping to `criteria`.
 const criteriaSchema = z.any();
 
-const toolSchema = z.object({ criteria: criteriaSchema });
+const toolSchema = z.object({
+  criteria: criteriaSchema,
+  asc: z.string().optional(),
+  desc: z.string().optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+  count: z.boolean().optional(),
+  fetchAll: z.boolean().optional(),
+});
 
 // Tool handler with runtime validation & coercion
 const toolHandler = async ({ params }: any) => {
-  const { criteria } = params;
+  // OVERLAY (search-fetchall-fix): capture sibling pagination options alongside
+  // `criteria`. Upstream destructured only `criteria`, dropping the sibling
+  // `fetchAll` clients send, so findAccounts capped at one 1000-row page.
+  const { criteria = [], ...options } = params ?? {};
   const parsed = RUNTIME_CRITERIA_SCHEMA.safeParse(criteria);
   if (!parsed.success) {
     return { content: [{ type: "text" as const, text: `Invalid criteria: ${parsed.error.message}` }] };
   }
-  const normalized = normalizeAccountCriteria(criteria);
+  // Fold the sibling options into an advanced-options object normalize +
+  // buildQuickbooksSearchCriteria convert to the {field,value} pagination
+  // entries node-quickbooks honors (e.g. {field:"fetchAll",value:true}).
+  const criteriaToSend =
+    Object.keys(options).length === 0
+      ? criteria
+      : Array.isArray(criteria)
+        ? { filters: criteria, ...options }
+        : { ...(criteria ?? {}), ...options };
+  const normalized = normalizeAccountCriteria(criteriaToSend);
   const response = await searchQuickbooksAccounts(normalized);
   if (response.isError) {
     return { content: [{ type: "text" as const, text: `Error searching accounts: ${response.error}` }] };
