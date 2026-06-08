@@ -92,6 +92,9 @@ import { UpdateCreditMemoTool } from "./tools/update-credit-memo.tool.js";
 import { DeleteCreditMemoTool } from "./tools/delete-credit-memo.tool.js";
 import { SearchCreditMemosTool } from "./tools/search-credit-memos.tool.js";
 
+// Unified entity-agnostic paginated read
+import { QueryEntityTool } from "./tools/query-entity.tool.js";
+
 // Refund Receipt tools
 import { CreateRefundReceiptTool } from "./tools/create-refund-receipt.tool.js";
 import { GetRefundReceiptTool } from "./tools/get-refund-receipt.tool.js";
@@ -316,6 +319,7 @@ const main = async () => {
   RegisterTool(server, UpdateCreditMemoTool);
   RegisterTool(server, DeleteCreditMemoTool);
   RegisterTool(server, SearchCreditMemosTool);
+  RegisterTool(server, QueryEntityTool);
 
   // Add tools for refund receipts
   RegisterTool(server, CreateRefundReceiptTool);
