@@ -4,11 +4,14 @@ import { z } from "zod";
 
 const toolName = "query_entity";
 const toolDescription =
-  "Entity-agnostic paginated read: SELECT * FROM <entity> with STARTPOSITION/MAXRESULTS. " +
-  "One uniform pagination path for any supported QBO entity (Account, Term, PaymentMethod, " +
-  "TaxCode, Customer, Vendor, Item, Invoice, CreditMemo, PurchaseOrder, Purchase, " +
-  "JournalEntry, Payment). Prefer this for bulk/programmatic reads over the per-entity " +
-  "search_* tools, whose pagination support is inconsistent.";
+  "Entity-agnostic paginated read: SELECT * FROM <entity> with STARTPOSITION/MAXRESULTS, " +
+  "issued over the QBO /batch Query endpoint. Returns the live, REFERENCEABLE set: " +
+  "soft-deleted and 'Clear data and reset' tombstones (which read Active=true via the " +
+  "standalone /query endpoint yet fault 2500 when referenced) are excluded. One uniform " +
+  "pagination path for any supported QBO entity (Account, Term, PaymentMethod, TaxCode, " +
+  "Customer, Vendor, Item, Invoice, CreditMemo, PurchaseOrder, Purchase, JournalEntry, " +
+  "Payment). Prefer this for bulk/programmatic reads over the per-entity search_* tools, " +
+  "which go through /query and surface tombstones.";
 
 const toolSchema = z.object({
   entity: z

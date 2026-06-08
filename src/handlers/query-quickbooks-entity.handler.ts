@@ -2,67 +2,109 @@ import { QuickbooksClient } from "../clients/quickbooks-client.js";
 import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
 
-// QBO entity name -> node-quickbooks find method. Every findX delegates to the
-// same `module.query(qbo, entity, criteria)` primitive, which honors
-// {field:'limit'|'offset'|'fetchAll'} entries in a criteria array (STARTPOSITION
-// / MAXRESULTS). Dispatching here gives one uniform, paginated read path for any
-// entity — no per-entity tool drift. The QueryResponse key is the entity name.
-const ENTITY_FIND: Record<string, string> = {
-  Account: "findAccounts",
-  Term: "findTerms",
-  PaymentMethod: "findPaymentMethods",
-  TaxCode: "findTaxCodes",
-  Customer: "findCustomers",
-  Vendor: "findVendors",
-  Item: "findItems",
-  Invoice: "findInvoices",
-  CreditMemo: "findCreditMemos",
-  PurchaseOrder: "findPurchaseOrders",
-  Purchase: "findPurchases",
-  JournalEntry: "findJournalEntries",
-  Payment: "findPayments",
-};
+// Entity-agnostic paginated read, issued over the QBO **/batch Query** endpoint
+// (POST), NOT node-quickbooks' findX (GET /query).
+//
+// Why /batch and not /query: a QBO "Clear data and reset" (and ordinary
+// soft-deletes) leave records that read `Active: true` via get-by-Id AND via
+// the GET /query endpoint that node-quickbooks' findX wraps — yet are
+// unreferenceable (create a dependent → fault 2500 "made inactive") and hold
+// their name (block recreation → 6240). The standalone /query endpoint returns
+// these tombstones; the /batch Query operation returns only the live,
+// referenceable set (verified 2026-06-08 on dev: `select * from Account`
+// returned 35 via /batch vs 200 via /query, the 165 extra all unreferenceable
+// tombstones). Resolving references against the /query view binds them to dead
+// Ids; the /batch view is QBO's authoritative referenceable set. This is a
+// QBO-platform behavior, identical on stock upstream — see DECISIONS.md.
+
+// Supported entity names, used verbatim in the `FROM` clause.
+const SUPPORTED_ENTITIES: readonly string[] = [
+  "Account", "Term", "PaymentMethod", "TaxCode", "Customer", "Vendor", "Item",
+  "Invoice", "CreditMemo", "PurchaseOrder", "Purchase", "JournalEntry", "Payment",
+];
 
 export interface QueryEntityInput {
   entity: string;
-  where?: Array<Record<string, any>>;
+  where?: Array<{ field: string; value: unknown; operator?: string }>;
   limit?: number;
   offset?: number;
   fetchAll?: boolean;
 }
 
+// QBO query literal: quote + backslash-escape strings; booleans/numbers raw.
+function toSqlLiteral(value: unknown): string {
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return String(value);
+  return "'" + String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+}
+
+function buildWhereClause(where?: QueryEntityInput["where"]): string {
+  if (!where || where.length === 0) return "";
+  const clauses = where.map(
+    (c) => `${c.field} ${c.operator ?? "="} ${toSqlLiteral(c.value)}`,
+  );
+  return " WHERE " + clauses.join(" AND ");
+}
+
+// Run one `SELECT … STARTPOSITION n MAXRESULTS k` as a single /batch Query item.
+// Returns the entity rows (the QueryResponse array), or [] when the page is empty.
+async function runBatchQuery(quickbooks: any, sql: string): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    quickbooks.batch([{ bId: "q", Query: sql }], (err: any, response: any) => {
+      if (err) return reject(err);
+      const item = response?.BatchItemResponse?.[0];
+      if (item?.Fault) {
+        return reject(new Error(JSON.stringify(item.Fault)));
+      }
+      const queryResponse = item?.QueryResponse ?? {};
+      // The rows live under the entity-named key; pick the first array value.
+      const arrayKey = Object.keys(queryResponse).find((k) =>
+        Array.isArray(queryResponse[k]),
+      );
+      resolve(arrayKey ? queryResponse[arrayKey] : []);
+    });
+  });
+}
+
 export async function queryQuickbooksEntity(
-  data: QueryEntityInput
+  data: QueryEntityInput,
 ): Promise<ToolResponse<any[]>> {
-  const method = ENTITY_FIND[data.entity];
-  if (!method) {
+  if (!SUPPORTED_ENTITIES.includes(data.entity)) {
     return {
       result: null,
       isError: true,
-      error: `Unsupported entity '${data.entity}'. Known: ${Object.keys(ENTITY_FIND).join(", ")}`,
+      error: `Unsupported entity '${data.entity}'. Known: ${SUPPORTED_ENTITIES.join(", ")}`,
     };
   }
   try {
     const quickbooks = await QuickbooksClient.getInstance();
-    // Pagination rides as {field,value} criteria entries — the array form
-    // node-quickbooks' module.query parses for STARTPOSITION/MAXRESULTS.
-    const criteria: Array<Record<string, any>> = [...(data.where ?? [])];
-    criteria.push({ field: "limit", value: data.limit ?? 1000 });
-    criteria.push({ field: "offset", value: data.offset ?? 1 });
-    if (data.fetchAll) criteria.push({ field: "fetchAll", value: true });
-    return new Promise((resolve) => {
-      (quickbooks as any)[method](criteria, (err: any, result: any) => {
-        if (err) {
-          resolve({ result: null, isError: true, error: formatError(err) });
-        } else {
-          resolve({
-            result: result?.QueryResponse?.[data.entity] || [],
-            isError: false,
-            error: null,
-          });
-        }
-      });
-    });
+    const limit = data.limit ?? 1000;
+    const base = `select * from ${data.entity}${buildWhereClause(data.where)}`;
+
+    if (data.fetchAll) {
+      const all: any[] = [];
+      let start = 1; // QBO STARTPOSITION is 1-based
+      // Sequential single-item /batch calls: one Query per page, paginate until
+      // a short page. (The /batch 30-op cap is per call, so one page per call
+      // is always safe.)
+      for (;;) {
+        const page = await runBatchQuery(
+          quickbooks,
+          `${base} STARTPOSITION ${start} MAXRESULTS ${limit}`,
+        );
+        all.push(...page);
+        if (page.length < limit) break;
+        start += limit;
+      }
+      return { result: all, isError: false, error: null };
+    }
+
+    const offset = data.offset ?? 1;
+    const rows = await runBatchQuery(
+      quickbooks,
+      `${base} STARTPOSITION ${offset} MAXRESULTS ${limit}`,
+    );
+    return { result: rows, isError: false, error: null };
   } catch (error) {
     return { result: null, isError: true, error: formatError(error) };
   }

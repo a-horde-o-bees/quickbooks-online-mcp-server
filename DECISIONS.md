@@ -71,3 +71,19 @@ Rejected:
 - **Keep mirroring uncritically** — upstream ships inconsistent and sometimes-broken tools, so "it's official" is not evidence of correctness; trust only what our probes/audits confirm.
 
 Verified 2026-06-08: naming provenance traced to upstream's first commit (`bfd03b4`, `akshit_agarwal@intuit.com`) and `86afee2` ("comprehensive API coverage with 143 tools"); our fork commits never renamed a tool. Delete-and-replace of transactions proven end-to-end on stage (the capability sweep), confirming a full wipe is a state-hygiene choice, not a capability limit.
+
+## Reads go through the `/batch` Query endpoint, not `/query` — the live, referenceable view
+
+`query_entity` is the project's single read tool — an entity-agnostic `SELECT * FROM <entity>` paginator that replaced the per-entity `search_*` tools, whose `fetchAll` pagination was inconsistent (some rejected paged criteria; credit-memos/POs couldn't page past 1000 at all). It issues that SELECT over the **POST `/batch`** Query operation (node-quickbooks `batch()`), never the standalone **GET `/query`** that node-quickbooks' `findX` wraps. The two endpoints disagree on what's visible, and only `/batch` returns the set you can actually reference.
+
+**Why — the two endpoints return different populations (2026-06-08, dev).** A QBO "Clear data and reset" (and ordinary soft-deletes) leave **tombstone** records that read `Active: true` via `get_<entity>` *and* via GET `/query` — yet are unreferenceable (creating a dependent that points at one faults `2500` "…has been made inactive") and hold their name (recreation faults `6240`) and refuse reactivation (update faults `2010`). They are indistinguishable from live records on every field. The discriminator is purely the **endpoint**: `select * from Account` returned **35** rows via `/batch` vs **200** via `/query` — the 165 extra all tombstones, all reading `Active=true`, repeatable and pagination-independent (same minorversion 75). `where Name='Sales'` returned the one live `957` via `/batch` vs all five (incl. four dead) via `/query`. So a pull that resolves references off `/query` binds them to dead Ids; `/batch` is QBO's authoritative *referenceable* view.
+
+This is a platform behavior, **identical on stock upstream** — both our former `query_entity` and upstream's `search_*` go through `findX`/`/query` and surface tombstones; our pagination overlay did not cause it. Confirmed by routing the same query through both paths in one session.
+
+**Consequences.**
+
+- `iter_record_pages` / `fetch_entity_index` (the pull's reference resolution) inherit the live view for free — references bind to the live record, tombstones excluded. A name that exists *only* as a tombstone resolves to nothing, so the push attempts a create and **fails loudly** (`6240`) rather than silently binding a dead Id — the correct surfacing of an unrecoverable realm.
+- `/batch` caps at 30 operations per call, so a >1000-row entity paginates as **sequential single-Query `/batch` calls** (one page each) — no cap pressure.
+- The `search_*` tools still ride `/query`; prefer `query_entity` for any read whose result feeds reference resolution.
+
+**Rejected.** Filtering tombstones by `Active` (they read `true` — no field distinguishes them). Reactivating them (`2010` refuses it). Treating it as our pagination bug (proven endpoint-level, upstream-identical).

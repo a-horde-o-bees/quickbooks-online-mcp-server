@@ -211,6 +211,9 @@ export const mockQuickBooksInstance = {
   reportVendorBalance: jest.fn(),
   reportVendorExpenses: jest.fn(),
   reportSalesTaxLiability: jest.fn(),
+
+  // Batch (POST /batch) — used by query_entity's batch-Query read path.
+  batch: jest.fn(),
 };
 
 // Mock QuickBooks client (instance)

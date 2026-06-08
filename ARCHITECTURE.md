@@ -9,10 +9,10 @@ This file and `DECISIONS.md` ride on the fork branch and are excluded when cherr
 Overlays land as native commits on the fork's `monaco-overlays` branch:
 
 - `batch_request` — chunked + concurrent batch create/update/delete; the throughput backbone for pushes.
+- `query_entity` — the **primary read path**: one entity-agnostic paginated `SELECT * FROM <entity> STARTPOSITION n MAXRESULTS k` for any supported entity, replacing the per-entity `search_*` tools (whose pagination was inconsistent — some rejected paged criteria; credit-memos/POs couldn't page past 1000). It issues that SELECT over the **POST `/batch`** Query operation, *not* the GET `/query` that node-quickbooks `findX` wraps — so it returns only the live, *referenceable* set, excluding the reset-tombstones `/query` surfaces (read `Active=true` yet fault `2500` when referenced). Every read feeding reference resolution (the pull's `fetch_entity_index` / `iter_record_pages`) goes through it. See DECISIONS § "Reads go through the `/batch` Query endpoint".
 - `force-reauth` — `auth-server` clears stale in-memory tokens on re-auth so a fresh consent recovers from invalidated state.
 - `vendor-tools` — schema-relax only, post upstream PR #22.
-- `search-payments` — `fetchAll` for >1000-record pulls.
-- `search-fetchall-fix` — `search_invoices` / `search_items` / `search_accounts` previously discarded the sibling `fetchAll` (destructured only `criteria`), capping pulls at one 1000-row page; they now fold options into criteria like `search_customers` / `search_payments`, so `fetchAll` paginates fully (verified: 13,867 invoices). Upstream candidate.
+- `search-payments` / `search-fetchall-fix` — `search_invoices` / `search_items` / `search_accounts` / `search_payments` previously discarded the sibling `fetchAll` (destructured only `criteria`), capping pulls at one 1000-row page; they now fold options into criteria like `search_customers`, so `fetchAll` paginates fully (verified: 13,867 invoices). Upstream candidate. (Superseded as the project read path by `query_entity`, but retained — they still ride `/query`.)
 
 These overlays are native commits on `monaco-overlays`, layered on the upstream base and reconciled forward by merging `upstream/main` (conflicts in the overlaid files are where the adaptation happens). The former `apply.sh` / `--extensions` marker-block framework that held them as patches is retired — superseded by these commits, and prone to a failure mode that bit us once: an in-place edit with no backing overlay file was silently clobbered by a `git submodule update`.
 
