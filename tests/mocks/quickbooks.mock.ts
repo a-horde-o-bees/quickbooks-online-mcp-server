@@ -270,8 +270,10 @@ export function resetAllMocks() {
   });
   mockQuickbooksClient.authenticate.mockReset();
   mockQuickbooksClient.getQuickbooks.mockReset();
+  mockQuickbooksClient.refreshAccessToken.mockReset();
   (mockQuickbooksClient.getQuickbooks as any).mockReturnValue(mockQuickBooksInstance);
   (mockQuickbooksClient.authenticate as any).mockResolvedValue(mockQuickBooksInstance);
+  (mockQuickbooksClient.refreshAccessToken as any).mockResolvedValue({ access_token: 'mock-token', expires_in: 3600 });
   mockQuickbooksClientClass.getInstance.mockReset();
   (mockQuickbooksClientClass.getInstance as any).mockResolvedValue(mockQuickBooksInstance);
   mockQuickbooksClientClass.getAuthCredentials.mockReset();

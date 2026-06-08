@@ -1,4 +1,4 @@
-import { QuickbooksClient } from "../clients/quickbooks-client.js";
+import { QuickbooksClient, quickbooksClient } from "../clients/quickbooks-client.js";
 import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
 
@@ -66,6 +66,35 @@ async function runBatchQuery(quickbooks: any, sql: string): Promise<any[]> {
   });
 }
 
+// QBO access-token expiry, surfaced by the /batch Fault or a transport error.
+// `String(error)` covers both an Error (stringifies with its message) and a
+// raw value uniformly.
+const TOKEN_EXPIRY_MARKERS = ["003200", "token expired", "authenticationfailed"];
+function isTokenExpiry(error: unknown): boolean {
+  const msg = String(error).toLowerCase();
+  return TOKEN_EXPIRY_MARKERS.some((marker) => msg.includes(marker));
+}
+
+// Run one page resilient to mid-pagination token expiry. `getInstance()`
+// refreshes proactively (5-min buffer) and is re-fetched per page so a long
+// `fetchAll` never reuses one instance across the ~60-min token boundary. The
+// reactive arm covers QBO expiring the token earlier than the client's own
+// estimate (which is why a long deploy's pull died at ~60 min, errorCode
+// 003200): on a token-expiry error, force a refresh — QBO is the authority that
+// just rejected the token, so we don't trust `isTokenExpiredOrExpiringSoon` —
+// rebuild the instance, and retry the page once.
+async function runBatchQueryResilient(sql: string): Promise<any[]> {
+  const quickbooks = await QuickbooksClient.getInstance();
+  try {
+    return await runBatchQuery(quickbooks, sql);
+  } catch (error) {
+    if (!isTokenExpiry(error)) throw error;
+    await quickbooksClient.refreshAccessToken();
+    const refreshed = await quickbooksClient.authenticate();
+    return await runBatchQuery(refreshed, sql);
+  }
+}
+
 export async function queryQuickbooksEntity(
   data: QueryEntityInput,
 ): Promise<ToolResponse<any[]>> {
@@ -77,7 +106,6 @@ export async function queryQuickbooksEntity(
     };
   }
   try {
-    const quickbooks = await QuickbooksClient.getInstance();
     const limit = data.limit ?? 1000;
     const base = `select * from ${data.entity}${buildWhereClause(data.where)}`;
 
@@ -86,10 +114,10 @@ export async function queryQuickbooksEntity(
       let start = 1; // QBO STARTPOSITION is 1-based
       // Sequential single-item /batch calls: one Query per page, paginate until
       // a short page. (The /batch 30-op cap is per call, so one page per call
-      // is always safe.)
+      // is always safe.) Each page is token-resilient, so a long pull survives
+      // the access-token expiry boundary.
       for (;;) {
-        const page = await runBatchQuery(
-          quickbooks,
+        const page = await runBatchQueryResilient(
           `${base} STARTPOSITION ${start} MAXRESULTS ${limit}`,
         );
         all.push(...page);
@@ -100,8 +128,7 @@ export async function queryQuickbooksEntity(
     }
 
     const offset = data.offset ?? 1;
-    const rows = await runBatchQuery(
-      quickbooks,
+    const rows = await runBatchQueryResilient(
       `${base} STARTPOSITION ${offset} MAXRESULTS ${limit}`,
     );
     return { result: rows, isError: false, error: null };

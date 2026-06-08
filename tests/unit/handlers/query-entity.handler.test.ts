@@ -1,9 +1,9 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { mockQuickbooksClientClass, mockQuickBooksInstance, resetAllMocks } from '../../mocks/quickbooks.mock';
+import { mockQuickbooksClient, mockQuickbooksClientClass, mockQuickBooksInstance, resetAllMocks } from '../../mocks/quickbooks.mock';
 
 // ESM-compatible module mocking
 jest.unstable_mockModule('../../../src/clients/quickbooks-client', () => ({
-  quickbooksClient: {},
+  quickbooksClient: mockQuickbooksClient,
   QuickbooksClient: mockQuickbooksClientClass,
 }));
 
@@ -108,6 +108,34 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
     );
     const res = await queryQuickbooksEntity({ entity: 'Account' });
     expect(res.isError).toBe(true);
+  });
+
+  it('refreshes the token and retries the page on a 003200 expiry Fault', async () => {
+    let n = 0;
+    (mockQuickBooksInstance.batch as any).mockImplementation((_i: any, cb: any) => {
+      n++;
+      if (n === 1) {
+        return cb(null, {
+          BatchItemResponse: [{ bId: 'q', Fault: { Error: [{ Message: 'AuthenticationFailed', code: '003200', Detail: 'Token expired' }] } }],
+        });
+      }
+      cb(null, { BatchItemResponse: [{ bId: 'q', QueryResponse: { Invoice: [{ Id: '7001' }] } }] });
+    });
+    const res = await queryQuickbooksEntity({ entity: 'Invoice' });
+    expect(res.isError).toBe(false);
+    expect(res.result).toEqual([{ Id: '7001' }]);
+    expect(mockQuickbooksClient.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(mockQuickbooksClient.authenticate).toHaveBeenCalledTimes(1);
+    expect((mockQuickBooksInstance.batch as any).mock.calls).toHaveLength(2);
+  });
+
+  it('does not refresh on a non-expiry Fault', async () => {
+    (mockQuickBooksInstance.batch as any).mockImplementation((_i: any, cb: any) =>
+      cb(null, { BatchItemResponse: [{ bId: 'q', Fault: { Error: [{ code: '4000' }] } }] }),
+    );
+    const res = await queryQuickbooksEntity({ entity: 'Account' });
+    expect(res.isError).toBe(true);
+    expect(mockQuickbooksClient.refreshAccessToken).not.toHaveBeenCalled();
   });
 
   it('surfaces a getInstance failure as an error', async () => {
