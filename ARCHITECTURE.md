@@ -16,6 +16,14 @@ Overlays land as native commits on the fork's `monaco-overlays` branch:
 
 These overlays are native commits on `monaco-overlays`, layered on the upstream base and reconciled forward by merging `upstream/main` (conflicts in the overlaid files are where the adaptation happens). The former `apply.sh` / `--extensions` marker-block framework that held them as patches is retired — superseded by these commits, and prone to a failure mode that bit us once: an in-place edit with no backing overlay file was silently clobbered by a `git submodule update`.
 
+## Error convention — text at the tool boundary, never MCP `isError`
+
+Tools flatten a failure to a text content block (`Error <verb> <entity>: ${error}`, `Error in batch_request: …`) and **never set the MCP result's `isError`**. `isError` lives only in the handler return shape (`{ isError, error, result }`); the tool layer reads it and emits text. This is upstream's convention across all ~143 tools, and overlays follow it exactly (`batch_request`, the paginated `search_*`, the relaxed vendor tools) — so the client sees one error shape whether it calls an upstream-unaltered tool or an overlay.
+
+The client (`qbo_pipeline._mcp_client`) conforms to that contract: a result whose text begins `Error ` is treated as the failure — `call_tool` retries the retryable ones (so the fork refreshes on, e.g., an access-token-expiry `Error searching … token expired`), and `fetch_records` raises the rest. Batch keeps **per-record** faults: `batch_request` returns each item's outcome and `_dispatch_batch` parses them per-item — a batch is never collapsed to one error.
+
+Do **not** propagate `isError` to the MCP result to "correct" this: it would diverge from upstream on every tool and conflict on each forward-merge of `upstream/main`. Mirror upstream; the client conforms.
+
 ## How the project binds to this server
 
 `qbo_pipeline._mcp_client` launches the server as a stdio subprocess — one per pipeline verb run — reading `quickbooks-online-mcp-server/.env` at launch to bind the QuickBooks client to the active realm, so `switch-target` rebinds with no session restart. Path resolution: `QBO_MCP_ENTRY` / `QBO_MCP_DIR` env overrides, else `<project-root>/quickbooks-online-mcp-server/dist/index.js`. `qbo_pipeline._target_verify` confirms the active `.env` matches the requested target before any read/write. Subprocess lifecycle, concurrency cap, and rate limiting are detailed in `qbo-pipeline/ARCHITECTURE.md` § "MCP transport, rate, and concurrency limits". The project does **not** register this server as a session-bound agent MCP server — see `qbo-pipeline/DECISIONS.md`.
