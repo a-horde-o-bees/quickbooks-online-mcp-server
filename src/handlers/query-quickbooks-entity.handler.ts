@@ -67,11 +67,13 @@ async function runBatchQuery(quickbooks: any, sql: string): Promise<any[]> {
 }
 
 // QBO access-token expiry, surfaced by the /batch Fault or a transport error.
-// `String(error)` covers both an Error (stringifies with its message) and a
-// raw value uniformly.
+// `formatError` JSON-stringifies a non-Error value — a request-level 401
+// rejects with node-quickbooks' parsed body OBJECT, which `String()` would
+// flatten to "[object Object]" and never match (the 2026-06-11 walk kills:
+// four ~60-min deploys died on 003200 with this retry already in place).
 const TOKEN_EXPIRY_MARKERS = ["003200", "token expired", "authenticationfailed"];
 function isTokenExpiry(error: unknown): boolean {
-  const msg = String(error).toLowerCase();
+  const msg = formatError(error).toLowerCase();
   return TOKEN_EXPIRY_MARKERS.some((marker) => msg.includes(marker));
 }
 

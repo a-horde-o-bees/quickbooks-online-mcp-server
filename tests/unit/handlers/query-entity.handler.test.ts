@@ -129,6 +129,30 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
     expect((mockQuickBooksInstance.batch as any).mock.calls).toHaveLength(2);
   });
 
+  it('refreshes and retries when a request-level 401 rejects with a raw body object', async () => {
+    // node-quickbooks passes the parsed HTTP-error body OBJECT as `err` (not an
+    // Error) — `String(err)` flattens it to "[object Object]", which is how the
+    // retry sat dead through four ~60-min deploy kills (2026-06-11). The
+    // predicate must serialize the object to see the 003200 marker.
+    let n = 0;
+    (mockQuickBooksInstance.batch as any).mockImplementation((_i: any, cb: any) => {
+      n++;
+      if (n === 1) {
+        return cb({
+          warnings: null,
+          intuitObject: null,
+          fault: { error: [{ message: 'message=AuthenticationFailed; errorCode=003200; statusCode=401', detail: 'Token expired', code: '3200' }] },
+        }, null);
+      }
+      cb(null, { BatchItemResponse: [{ bId: 'q', QueryResponse: { Invoice: [{ Id: '7002' }] } }] });
+    });
+    const res = await queryQuickbooksEntity({ entity: 'Invoice' });
+    expect(res.isError).toBe(false);
+    expect(res.result).toEqual([{ Id: '7002' }]);
+    expect(mockQuickbooksClient.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect((mockQuickBooksInstance.batch as any).mock.calls).toHaveLength(2);
+  });
+
   it('does not refresh on a non-expiry Fault', async () => {
     (mockQuickBooksInstance.batch as any).mockImplementation((_i: any, cb: any) =>
       cb(null, { BatchItemResponse: [{ bId: 'q', Fault: { Error: [{ code: '4000' }] } }] }),

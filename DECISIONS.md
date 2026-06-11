@@ -87,3 +87,11 @@ This is a platform behavior, **identical on stock upstream** — both our former
 - The `search_*` tools still ride `/query`; prefer `query_entity` for any read whose result feeds reference resolution.
 
 **Rejected.** Filtering tombstones by `Active` (they read `true` — no field distinguishes them). Reactivating them (`2010` refuses it). Treating it as our pagination bug (proven endpoint-level, upstream-identical).
+
+## `query_entity` survives the access-token boundary: proactive refresh + reactive 003200 retry
+
+A deploy cycle's pulls run longer than Intuit's ~60-minute access token. Two arms keep a long `fetchAll` alive: `QuickbooksClient.getInstance()` is re-fetched **per page** and refreshes proactively when expiry is within a 5-minute buffer; and the reactive arm catches a page that fails on token expiry anyway (QBO is the authority that just rejected the token — its server-side expiry can precede the client's own estimate), forces `refreshAccessToken()`, rebuilds the instance, and retries the page once. A request-level 401 rejects the whole `/batch` call *before* the API processes anything, so the single retry cannot double-apply.
+
+**Scar (2026-06-11): the reactive arm shipped dead.** `isTokenExpiry` matched markers against `String(error)` — but a request-level 401 rejects with node-quickbooks' parsed body **object** (a within-response `BatchItemResponse[].Fault` is wrapped in an `Error` first, which is the only shape the tests covered), and `String({...})` is `"[object Object]"`, so the marker never matched and the error passed through as a plain page failure. Four ~60-minute deploy kills on `errorCode=003200` happened with the retry present in `dist/`. Fix: the predicate serializes through `formatError` (JSON for non-Error values); the regression test rejects with the raw body object verbatim. Lesson encoded in the test: cover the *transport-level* error shape, not only the in-response Fault shape.
+
+The push-side `submit_batch` handler keeps only the proactive arm (`authenticate()` per call): its calls are short, a 401 surfaces as recoverable per-item `failed` counts in push-realm, and an unconditional mutate-retry would need idempotency reasoning the read path doesn't.
