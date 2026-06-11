@@ -1,6 +1,7 @@
 import { QuickbooksClient, quickbooksClient } from "../clients/quickbooks-client.js";
 import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
+import { isTokenExpiry } from "../helpers/token-expiry.js";
 
 // Entity-agnostic paginated read, issued over the QBO **/batch Query** endpoint
 // (POST), NOT node-quickbooks' findX (GET /query).
@@ -64,17 +65,6 @@ async function runBatchQuery(quickbooks: any, sql: string): Promise<any[]> {
       resolve(arrayKey ? queryResponse[arrayKey] : []);
     });
   });
-}
-
-// QBO access-token expiry, surfaced by the /batch Fault or a transport error.
-// `formatError` JSON-stringifies a non-Error value — a request-level 401
-// rejects with node-quickbooks' parsed body OBJECT, which `String()` would
-// flatten to "[object Object]" and never match (the 2026-06-11 walk kills:
-// four ~60-min deploys died on 003200 with this retry already in place).
-const TOKEN_EXPIRY_MARKERS = ["003200", "token expired", "authenticationfailed"];
-function isTokenExpiry(error: unknown): boolean {
-  const msg = formatError(error).toLowerCase();
-  return TOKEN_EXPIRY_MARKERS.some((marker) => msg.includes(marker));
 }
 
 // Run one page resilient to mid-pagination token expiry. `getInstance()`

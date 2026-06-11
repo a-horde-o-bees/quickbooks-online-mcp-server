@@ -1,6 +1,7 @@
 import { quickbooksClient } from "../clients/quickbooks-client.js";
 import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
+import { isTokenExpiry } from "../helpers/token-expiry.js";
 
 /**
  * Batch item request — one operation in a QBO /batch call.
@@ -81,8 +82,24 @@ export async function batchQuickbooks(items: BatchItem[]): Promise<ToolResponse<
     return new Promise((resolve) => {
       // node-quickbooks exposes batch() at runtime (index.js:209) but the bundled
       // type declarations don't include it. Cast to any to access the method.
-      (quickbooks as any).batch(requests, (err: any, response: any) => {
+      (quickbooks as any).batch(requests, async (err: any, response: any) => {
         if (err) {
+          // A token-expiry 401 rejects the whole /batch call BEFORE the API
+          // processes anything, so the caller may safely re-send — but the
+          // per-call authenticate() above refreshes only on the client's own
+          // expiry estimate, and QBO's server-side expiry can precede it (the
+          // read path's reactive arm exists for exactly this). Heal the token
+          // now — QBO is the authority that just rejected it — so the caller's
+          // re-send dispatches fresh. No re-send here: mutation retry policy
+          // stays caller-side (qbo-pipeline `_batch._dispatch_batch`).
+          if (isTokenExpiry(err)) {
+            try {
+              await quickbooksClient.refreshAccessToken();
+              await quickbooksClient.authenticate();
+            } catch {
+              // Surface the original 401; a failed heal changes nothing.
+            }
+          }
           resolve({
             result: null,
             isError: true,
