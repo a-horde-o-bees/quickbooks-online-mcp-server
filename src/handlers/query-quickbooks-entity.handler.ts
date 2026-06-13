@@ -22,6 +22,7 @@ import { isTokenExpiry } from "../helpers/token-expiry.js";
 const SUPPORTED_ENTITIES: readonly string[] = [
   "Account", "Term", "PaymentMethod", "TaxCode", "Customer", "Vendor", "Item",
   "Invoice", "CreditMemo", "PurchaseOrder", "Purchase", "JournalEntry", "Payment",
+  "Bill", "VendorCredit", "BillPayment",
 ];
 
 export interface QueryEntityInput {
