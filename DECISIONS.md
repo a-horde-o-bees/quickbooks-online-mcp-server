@@ -85,6 +85,7 @@ This is a platform behavior, **identical on stock upstream** — both our former
 - `iter_record_pages` / `fetch_entity_index` (the pull's reference resolution) inherit the live view for free — references bind to the live record, tombstones excluded. A name that exists *only* as a tombstone resolves to nothing, so the push attempts a create and **fails loudly** (`6240`) rather than silently binding a dead Id — the correct surfacing of an unrecoverable realm.
 - `/batch` caps at 30 operations per call, so a >1000-row entity paginates as **sequential single-Query `/batch` calls** (one page each) — no cap pressure.
 - The `search_*` tools still ride `/query`; prefer `query_entity` for any read whose result feeds reference resolution.
+- `query_entity` validates against a **`SUPPORTED_ENTITIES` allowlist** — so adding a pushable entity to the pipeline requires adding it here too, or the pull's read fails `"Unsupported entity '<E>'"` even when the entity's create/get/update tools exist (Bill/VendorCredit/BillPayment were missing it; the first AP deploy's leading pull surfaced it 2026-06-13).
 
 **Rejected.** Filtering tombstones by `Active` (they read `true` — no field distinguishes them). Reactivating them (`2010` refuses it). Treating it as our pagination bug (proven endpoint-level, upstream-identical).
 
