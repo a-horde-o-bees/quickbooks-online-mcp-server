@@ -96,8 +96,12 @@ export async function batchQuickbooks(items: BatchItem[]): Promise<ToolResponse<
             try {
               await quickbooksClient.refreshAccessToken();
               await quickbooksClient.authenticate();
-            } catch {
-              // Surface the original 401; a failed heal changes nothing.
+            } catch (healErr) {
+              // Surface the original 401; a failed heal changes nothing for
+              // this call. But LOG it — a silent swallow left the 2026-07-01
+              // deploy's 14-min 401 cascade with zero root-cause evidence.
+              const m = healErr instanceof Error ? healErr.message : String(healErr);
+              console.error(`[qbo-client] Token heal after 401 FAILED: ${m}`);
             }
           }
           resolve({
