@@ -32,6 +32,8 @@ import { UpdateEstimateTool } from "./tools/update-estimate.tool.js";
 import { DeleteEstimateTool } from "./tools/delete-estimate.tool.js";
 import { SearchCustomersTool } from "./tools/search-customers.tool.js";
 import { SearchEstimatesTool } from "./tools/search-estimates.tool.js";
+import { BatchRequestTool } from "./tools/batch.tool.js";
+import { QueryEntityTool } from "./tools/query-entity.tool.js";
 import { CreateBillTool } from "./tools/create-bill.tool.js";
 import { UpdateBillTool } from "./tools/update-bill.tool.js";
 import { DeleteBillTool } from "./tools/delete-bill.tool.js";
@@ -427,6 +429,10 @@ const main = async () => {
   RegisterTool(server, GetAgedPayablesTool);
   RegisterTool(server, GetVendorExpensesTool);
   RegisterTool(server, GetVendorBalanceTool);
+
+  // Add batch operation tools
+  RegisterTool(server, BatchRequestTool);
+  RegisterTool(server, QueryEntityTool);
 
   // Start receiving messages on stdin and sending messages on stdout
   const transport = new StdioServerTransport();

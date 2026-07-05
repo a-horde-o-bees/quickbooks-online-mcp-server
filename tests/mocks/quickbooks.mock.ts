@@ -213,6 +213,9 @@ export const mockQuickBooksInstance = {
   reportVendorBalance: jest.fn(),
   reportVendorExpenses: jest.fn(),
   reportSalesTaxLiability: jest.fn(),
+
+  // Batch (POST /batch) — used by query_entity's batch-Query read path.
+  batch: jest.fn(),
 };
 
 // Mock QuickBooks client (instance)
@@ -269,8 +272,10 @@ export function resetAllMocks() {
   });
   mockQuickbooksClient.authenticate.mockReset();
   mockQuickbooksClient.getQuickbooks.mockReset();
+  mockQuickbooksClient.refreshAccessToken.mockReset();
   (mockQuickbooksClient.getQuickbooks as any).mockReturnValue(mockQuickBooksInstance);
   (mockQuickbooksClient.authenticate as any).mockResolvedValue(mockQuickBooksInstance);
+  (mockQuickbooksClient.refreshAccessToken as any).mockResolvedValue({ access_token: 'mock-token', expires_in: 3600 });
   mockQuickbooksClientClass.getInstance.mockReset();
   (mockQuickbooksClientClass.getInstance as any).mockResolvedValue(mockQuickBooksInstance);
   mockQuickbooksClientClass.getAuthCredentials.mockReset();
