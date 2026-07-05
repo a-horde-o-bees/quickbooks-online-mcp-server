@@ -33,6 +33,68 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
     expect(mockQuickBooksInstance.batch).not.toHaveBeenCalled();
   });
 
+  it('accepts every allowlisted entity, covering the full tool-surface set', async () => {
+    const { SUPPORTED_ENTITIES } = await import('../../../src/handlers/query-quickbooks-entity.handler');
+    // The server's own per-entity tools serve 29 entity types; the query
+    // allowlist must not lag them.
+    expect(SUPPORTED_ENTITIES).toHaveLength(29);
+    for (const entity of ['SalesReceipt', 'Deposit', 'Transfer', 'TaxAgency', 'Attachable', 'Budget']) {
+      batchYields(entity, [[]]);
+      const res = await queryQuickbooksEntity({ entity });
+      expect(res.isError).toBe(false);
+      expect(lastSql()).toContain(`from ${entity} `);
+    }
+  });
+
+  it('rejects a limit outside 1..1000 without calling the API', async () => {
+    for (const limit of [0, 1001, 2.5]) {
+      const res = await queryQuickbooksEntity({ entity: 'Invoice', limit });
+      expect(res.isError).toBe(true);
+      expect(res.error).toContain('limit must be an integer in 1..1000');
+    }
+    expect(mockQuickBooksInstance.batch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an offset below 1 without calling the API', async () => {
+    const res = await queryQuickbooksEntity({ entity: 'Invoice', offset: 0 });
+    expect(res.isError).toBe(true);
+    expect(res.error).toContain('offset must be an integer >= 1');
+    expect(mockQuickBooksInstance.batch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported operator and an invalid field name without calling the API', async () => {
+    const badOp = await queryQuickbooksEntity({
+      entity: 'Invoice',
+      where: [{ field: 'Balance', value: 1, operator: '!=' }],
+    });
+    expect(badOp.isError).toBe(true);
+    expect(badOp.error).toContain("unsupported operator '!='");
+
+    const badField = await queryQuickbooksEntity({
+      entity: 'Invoice',
+      where: [{ field: "Name' OR 1", value: 'x' }],
+    });
+    expect(badField.isError).toBe(true);
+    expect(badField.error).toContain('invalid field');
+    expect(mockQuickBooksInstance.batch).not.toHaveBeenCalled();
+  });
+
+  it('renders IN with a parenthesized literal list and rejects IN without an array', async () => {
+    batchYields('Invoice', [[]]);
+    await queryQuickbooksEntity({
+      entity: 'Invoice',
+      where: [{ field: 'DocNumber', value: ['A1', 'A2'], operator: 'IN' }],
+    });
+    expect(lastSql()).toContain("DocNumber IN ('A1', 'A2')");
+
+    const bad = await queryQuickbooksEntity({
+      entity: 'Invoice',
+      where: [{ field: 'DocNumber', value: 'A1', operator: 'IN' }],
+    });
+    expect(bad.isError).toBe(true);
+    expect(bad.error).toContain('IN requires a non-empty array');
+  });
+
   it('reads one page as SELECT * with STARTPOSITION/MAXRESULTS', async () => {
     batchYields('Account', [[{ Id: '957', Name: 'Sales' }]]);
     const res = await queryQuickbooksEntity({ entity: 'Account' });
@@ -130,10 +192,11 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
   });
 
   it('refreshes and retries when a request-level 401 rejects with a raw body object', async () => {
-    // node-quickbooks passes the parsed HTTP-error body OBJECT as `err` (not an
-    // Error) — `String(err)` flattens it to "[object Object]", which is how the
-    // retry sat dead through four ~60-min deploy kills (2026-06-11). The
-    // predicate must serialize the object to see the 003200 marker.
+    // node-quickbooks rejects a request-level 401 with the parsed HTTP-error
+    // body OBJECT (not an Error) — `String(err)` flattens it to
+    // "[object Object]", so the expiry predicate must serialize the object to
+    // see the 003200 marker. This is the transport-level error shape, distinct
+    // from the in-response Fault shape the previous test covers.
     let n = 0;
     (mockQuickBooksInstance.batch as any).mockImplementation((_i: any, cb: any) => {
       n++;

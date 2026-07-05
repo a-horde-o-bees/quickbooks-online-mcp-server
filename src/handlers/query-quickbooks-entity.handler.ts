@@ -3,27 +3,37 @@ import { ToolResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
 import { isTokenExpiry } from "../helpers/token-expiry.js";
 
-// Entity-agnostic paginated read, issued over the QBO **/batch Query** endpoint
+// Entity-agnostic paginated read, issued over the QBO /batch Query operation
 // (POST), NOT node-quickbooks' findX (GET /query).
 //
-// Why /batch and not /query: a QBO "Clear data and reset" (and ordinary
-// soft-deletes) leave records that read `Active: true` via get-by-Id AND via
-// the GET /query endpoint that node-quickbooks' findX wraps — yet are
-// unreferenceable (create a dependent → fault 2500 "made inactive") and hold
-// their name (block recreation → 6240). The standalone /query endpoint returns
-// these tombstones; the /batch Query operation returns only the live,
-// referenceable set (verified 2026-06-08 on dev: `select * from Account`
-// returned 35 via /batch vs 200 via /query, the 165 extra all unreferenceable
-// tombstones). Resolving references against the /query view binds them to dead
-// Ids; the /batch view is QBO's authoritative referenceable set. This is a
-// QBO-platform behavior, identical on stock upstream — see DECISIONS.md.
+// Why /batch and not /query: soft-deleted records (including everything left
+// behind by a QBO "Clear data and reset") read `Active: true` via get-by-Id
+// and via the GET /query endpoint, yet are unreferenceable — creating a
+// dependent that points at one faults 2500 "made inactive", and they hold
+// their name against recreation (fault 6240). No field distinguishes them;
+// the endpoint does. The /batch Query operation returns only the live,
+// referenceable set, so reads that feed reference resolution must use it.
 
-// Supported entity names, used verbatim in the `FROM` clause.
-const SUPPORTED_ENTITIES: readonly string[] = [
-  "Account", "Term", "PaymentMethod", "TaxCode", "Customer", "Vendor", "Item",
-  "Invoice", "CreditMemo", "PurchaseOrder", "Purchase", "JournalEntry", "Payment",
-  "Bill", "VendorCredit", "BillPayment",
+// Entity names accepted in the FROM clause. Every entity the server's tool
+// surface serves; the allowlist is also what makes the SQL interpolation safe.
+export const SUPPORTED_ENTITIES: readonly string[] = [
+  "Account", "Attachable", "Bill", "BillPayment", "Budget", "Class",
+  "CreditMemo", "Customer", "Department", "Deposit", "Employee", "Estimate",
+  "Invoice", "Item", "JournalEntry", "Payment", "PaymentMethod", "Purchase",
+  "PurchaseOrder", "RefundReceipt", "SalesReceipt", "TaxAgency", "TaxCode",
+  "TaxRate", "Term", "TimeActivity", "Transfer", "Vendor", "VendorCredit",
 ];
+
+export const SUPPORTED_OPERATORS: readonly string[] = [
+  "=", "<", ">", "<=", ">=", "LIKE", "IN",
+];
+
+// Entity property path, e.g. `Balance` or `MetaData.LastUpdatedTime`.
+const FIELD_PATTERN = /^[A-Za-z][A-Za-z0-9._]*$/;
+
+// QBO caps MAXRESULTS at 1000; a larger value would silently truncate
+// fetchAll pagination (a full page would read as a short one).
+const MAX_PAGE_SIZE = 1000;
 
 export interface QueryEntityInput {
   entity: string;
@@ -40,12 +50,32 @@ function toSqlLiteral(value: unknown): string {
   return "'" + String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
 }
 
-function buildWhereClause(where?: QueryEntityInput["where"]): string {
-  if (!where || where.length === 0) return "";
-  const clauses = where.map(
-    (c) => `${c.field} ${c.operator ?? "="} ${toSqlLiteral(c.value)}`,
-  );
-  return " WHERE " + clauses.join(" AND ");
+// Build the WHERE clause, or return a string error for an invalid criterion.
+function buildWhereClause(
+  where?: QueryEntityInput["where"],
+): { clause: string } | { badCriterion: string } {
+  if (!where || where.length === 0) return { clause: "" };
+  const clauses: string[] = [];
+  for (const c of where) {
+    if (typeof c.field !== "string" || !FIELD_PATTERN.test(c.field)) {
+      return { badCriterion: `invalid field '${c.field}'` };
+    }
+    const operator = c.operator ?? "=";
+    if (!SUPPORTED_OPERATORS.includes(operator)) {
+      return {
+        badCriterion: `unsupported operator '${operator}' (known: ${SUPPORTED_OPERATORS.join(", ")})`,
+      };
+    }
+    if (operator === "IN") {
+      if (!Array.isArray(c.value) || c.value.length === 0) {
+        return { badCriterion: `operator IN requires a non-empty array value (field '${c.field}')` };
+      }
+      clauses.push(`${c.field} IN (${c.value.map(toSqlLiteral).join(", ")})`);
+      continue;
+    }
+    clauses.push(`${c.field} ${operator} ${toSqlLiteral(c.value)}`);
+  }
+  return { clause: " WHERE " + clauses.join(" AND ") };
 }
 
 // Run one `SELECT … STARTPOSITION n MAXRESULTS k` as a single /batch Query item.
@@ -70,12 +100,10 @@ async function runBatchQuery(quickbooks: any, sql: string): Promise<any[]> {
 
 // Run one page resilient to mid-pagination token expiry. `getInstance()`
 // refreshes proactively (5-min buffer) and is re-fetched per page so a long
-// `fetchAll` never reuses one instance across the ~60-min token boundary. The
+// `fetchAll` never reuses one instance across the access-token boundary. The
 // reactive arm covers QBO expiring the token earlier than the client's own
-// estimate (which is why a long deploy's pull died at ~60 min, errorCode
-// 003200): on a token-expiry error, force a refresh — QBO is the authority that
-// just rejected the token, so we don't trust `isTokenExpiredOrExpiringSoon` —
-// rebuild the instance, and retry the page once.
+// estimate: on a token-expiry error, force a refresh — QBO is the authority
+// that just rejected the token — rebuild the instance, and retry the page once.
 async function runBatchQueryResilient(sql: string): Promise<any[]> {
   const quickbooks = await QuickbooksClient.getInstance();
   try {
@@ -98,9 +126,34 @@ export async function queryQuickbooksEntity(
       error: `Unsupported entity '${data.entity}'. Known: ${SUPPORTED_ENTITIES.join(", ")}`,
     };
   }
+  if (
+    data.limit !== undefined &&
+    (!Number.isInteger(data.limit) || data.limit < 1 || data.limit > MAX_PAGE_SIZE)
+  ) {
+    return {
+      result: null,
+      isError: true,
+      error: `limit must be an integer in 1..${MAX_PAGE_SIZE} (QBO MAXRESULTS cap); got ${data.limit}`,
+    };
+  }
+  if (
+    data.offset !== undefined &&
+    (!Number.isInteger(data.offset) || data.offset < 1)
+  ) {
+    return {
+      result: null,
+      isError: true,
+      error: `offset must be an integer >= 1 (QBO STARTPOSITION is 1-based); got ${data.offset}`,
+    };
+  }
+  const whereResult = buildWhereClause(data.where);
+  if ("badCriterion" in whereResult) {
+    return { result: null, isError: true, error: `Invalid where criterion: ${whereResult.badCriterion}` };
+  }
+
   try {
-    const limit = data.limit ?? 1000;
-    const base = `select * from ${data.entity}${buildWhereClause(data.where)}`;
+    const limit = data.limit ?? MAX_PAGE_SIZE;
+    const base = `select * from ${data.entity}${whereResult.clause}`;
 
     if (data.fetchAll) {
       const all: any[] = [];
