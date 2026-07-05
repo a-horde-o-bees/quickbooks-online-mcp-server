@@ -260,6 +260,19 @@ describe('Payment Handlers', () => {
 
       expect(result.isError).toBe(false);
     });
+
+    it('should pass offset and fetchAll through to the criteria', async () => {
+      let seen: any;
+      (mockQuickBooksInstance.findPayments as jest.Mock).mockImplementation(
+        (criteria: any, cb: any) => { seen = criteria; cb(null, { QueryResponse: { Payment: [] } }); }
+      );
+
+      const result = await searchQuickbooksPayments({ offset: 101, fetchAll: true });
+
+      expect(result.isError).toBe(false);
+      expect(seen.offset).toBe(101);
+      expect(seen.fetchAll).toBe(true);
+    });
   });
 });
 
