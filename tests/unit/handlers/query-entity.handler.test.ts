@@ -100,13 +100,13 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
     const res = await queryQuickbooksEntity({ entity: 'Account' });
     expect(res.isError).toBe(false);
     expect(res.result).toEqual([{ Id: '957', Name: 'Sales' }]);
-    expect(lastSql()).toBe('select * from Account STARTPOSITION 1 MAXRESULTS 1000');
+    expect(lastSql()).toBe('select * from Account ORDERBY Id STARTPOSITION 1 MAXRESULTS 1000');
   });
 
   it('honors explicit limit/offset', async () => {
     batchYields('Invoice', [[]]);
     await queryQuickbooksEntity({ entity: 'Invoice', limit: 50, offset: 101 });
-    expect(lastSql()).toBe('select * from Invoice STARTPOSITION 101 MAXRESULTS 50');
+    expect(lastSql()).toBe('select * from Invoice ORDERBY Id STARTPOSITION 101 MAXRESULTS 50');
   });
 
   it('builds a WHERE clause from string, boolean, and operator', async () => {
@@ -121,7 +121,7 @@ describe('queryQuickbooksEntity (/batch read path)', () => {
     });
     expect(lastSql()).toBe(
       "select * from Account WHERE Name = 'O\\'Brien' AND Active = false AND Balance > 10" +
-        ' STARTPOSITION 1 MAXRESULTS 1000',
+        ' ORDERBY Id STARTPOSITION 1 MAXRESULTS 1000',
     );
   });
 
