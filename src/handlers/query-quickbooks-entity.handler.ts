@@ -153,7 +153,14 @@ export async function queryQuickbooksEntity(
 
   try {
     const limit = data.limit ?? MAX_PAGE_SIZE;
-    const base = `select * from ${data.entity}${whereResult.clause}`;
+    // ORDERBY Id pins pagination to an immutable key. Without it QBO's result
+    // order can shift while concurrent writes touch rows mid-pagination
+    // (observed 2026-07-30: late-committing payment applications reordered
+    // invoices between pages — ~150 rows re-served, ~150 never served, and the
+    // skipped rows' merged keys were re-pushed as real duplicates). With an
+    // immutable sort key, updates cannot move rows; a mid-pull create can only
+    // shift rows down (a re-serve the puller's bound-Id guard drops), never skip.
+    const base = `select * from ${data.entity}${whereResult.clause} ORDERBY Id`;
 
     if (data.fetchAll) {
       const all: any[] = [];
