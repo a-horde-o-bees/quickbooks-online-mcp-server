@@ -114,10 +114,13 @@ describe('QuickbooksClient.forceReauth', () => {
 
     await reauthPromise;
 
-    // The interactive flow ran (a second OAuthClient with the localhost
-    // redirect) even though the env-supplied refresh token looked usable.
+    // The interactive flow ran (a second OAuthClient with the env-declared
+    // registered redirect; localhost only as a no-env fallback) even though
+    // the env-supplied refresh token looked usable.
     expect(oauthInstances).toHaveLength(2);
-    expect(oauthInstances[1].cfg.redirectUri).toBe('http://localhost:8000/callback');
+    expect(oauthInstances[1].cfg.redirectUri).toBe(
+      process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8000/callback',
+    );
 
     // The discarded token was never sent for refresh; only the flow's fresh
     // refresh token was exchanged.

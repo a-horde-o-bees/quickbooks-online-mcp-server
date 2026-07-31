@@ -8,16 +8,20 @@
  *    stored refresh token is rejected (e.g. invalid_grant after the token
  *    was rotated by another consumer, expired past the 100-day window, or
  *    was revoked).
- * 2. The interactive flow must authorize AND exchange with the localhost
- *    callback redirect, even when QUICKBOOKS_REDIRECT_URI points elsewhere
- *    (e.g. the OAuth playground). Intuit rejects the code exchange if the
- *    redirect_uri differs from the one used in the authorize request.
+ * 2. The interactive flow must authorize AND exchange with the redirect the
+ *    env declares (QUICKBOOKS_REDIRECT_URI — the registered tunnel URL;
+ *    Intuit rejects an authorize request whose redirect_uri isn't on the
+ *    app's keys tab, and rejects the exchange if its redirect_uri differs
+ *    from the authorize request's — so both come from one flow client),
+ *    falling back to localhost only when the env declares none.
  */
 import { jest } from '@jest/globals';
 
 // The module under test validates env at import time. Set deterministic
-// values before importing it. QUICKBOOKS_REDIRECT_URI deliberately points
-// away from localhost to prove the flow ignores it.
+// values before importing it. NOTE: the module loads the repo's real .env
+// with override:true at import, so QUICKBOOKS_REDIRECT_URI below is only a
+// fallback for a checkout without one — assertions must read process.env
+// AFTER the import, never assume this literal survived.
 process.env.QUICKBOOKS_CLIENT_ID = 'test-client-id';
 process.env.QUICKBOOKS_CLIENT_SECRET = 'test-client-secret';
 process.env.QUICKBOOKS_REFRESH_TOKEN = 'stale-refresh-token';
@@ -149,11 +153,14 @@ describe('QuickbooksClient.authenticate', () => {
 
     await authPromise;
 
-    // A second OAuthClient was constructed for the flow, with the localhost
-    // redirect (NOT the playground URI from the environment).
+    // A second OAuthClient was constructed for the flow, carrying the
+    // env-declared registered redirect (localhost only as a no-env fallback —
+    // Intuit rejects an unregistered redirect_uri at authorize).
     expect(oauthInstances).toHaveLength(2);
     const flowClient = oauthInstances[1];
-    expect(flowClient.cfg.redirectUri).toBe('http://localhost:8000/callback');
+    expect(flowClient.cfg.redirectUri).toBe(
+      process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:8000/callback',
+    );
 
     // The code exchange went through the flow client, so authorize and
     // exchange used the same redirect_uri.
