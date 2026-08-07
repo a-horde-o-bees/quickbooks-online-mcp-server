@@ -32,6 +32,28 @@ export default {
       lines: 70,
       statements: 70,
     },
+    // update_account's normalizePatch carries a scalar field-type-map switch
+    // whose `default` arm is unreachable (the map only ever maps to
+    // string/boolean/number). The behavioral tests cover every reachable path;
+    // this floor accounts for that one dead arm.
+    './src/handlers/update-quickbooks-account.handler.ts': {
+      branches: 89,
+      functions: 100,
+      lines: 97,
+      statements: 95,
+    },
+    // create_account's normalizeAccountPayload carries a scalar field-type-map
+    // switch whose boolean/number/default arms are not reachable from the
+    // public surface (the fixed payload feeds only string fields; the ParentRef
+    // object is attached separately). The behavioral tests cover the reachable
+    // paths (top-level create, sub-account create via parent_id, errors); this
+    // floor accounts for the dead arms.
+    './src/handlers/create-quickbooks-account.handler.ts': {
+      branches: 60,
+      functions: 100,
+      lines: 75,
+      statements: 75,
+    },
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',

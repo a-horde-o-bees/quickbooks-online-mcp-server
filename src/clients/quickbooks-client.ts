@@ -122,6 +122,14 @@ export class QuickbooksClient {
     });
 
     return new Promise((resolve, reject) => {
+      // Guard against duplicate /callback requests for the same authorization
+      // code. Browsers resolve `localhost` to both 127.0.0.1 and ::1, and the
+      // server binds dual-stack (`::`), so the redirect frequently lands twice.
+      // Exchanging a one-time auth code a second time trips Intuit's replay
+      // protection, which REVOKES the tokens issued by the first exchange
+      // (RFC 6749 §4.1.2). Only the first callback may exchange the code.
+      let codeExchangeStarted = false;
+
       // Create temporary server for OAuth callback
       const server = http.createServer(async (req, res) => {
         console.log(`[auth-server] ${req.method} ${req.url}`);
@@ -133,6 +141,17 @@ export class QuickbooksClient {
           res.end('Not Found. Waiting for QuickBooks OAuth callback at /callback');
           return;
         }
+
+        // A duplicate callback for the same code must NOT be exchanged again, or
+        // Intuit revokes the token minted by the first hit. `codeExchangeStarted`
+        // is set synchronously before the first `await`, so the second request's
+        // handler observes it and bails out here.
+        if (codeExchangeStarted) {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body style="font-family:Arial;text-align:center;margin-top:20vh"><h2>Processing… you can close this window.</h2></body></html>');
+          return;
+        }
+        codeExchangeStarted = true;
 
         {
           try {
@@ -247,16 +266,57 @@ export class QuickbooksClient {
     if (this.refreshToken) updateEnvVar('QUICKBOOKS_REFRESH_TOKEN', this.refreshToken);
     if (this.realmId) updateEnvVar('QUICKBOOKS_REALM_ID', this.realmId);
 
-    // Atomic write: write to a sibling temp file, then rename. On POSIX rename
-    // is atomic within the same filesystem, so a crash mid-write cannot leave
-    // .env half-written or empty.
-    const tmpPath = `${tokenPath}.tmp.${process.pid}`;
+    const newContent = envLines.join('\n');
+    const isSymlink = this.isSymbolicLink(tokenPath);
+
+    if (isSymlink) {
+      // Write directly through the symlink to the real target. Using
+      // rename on a symlink replaces the link itself rather than writing
+      // through it, which breaks persistent-volume mounts in containers.
+      // If the symlink target doesn't exist yet (fresh PVC mount), resolve
+      // the link target without requiring it to exist, then write directly.
+      let realPath: string;
+      try {
+        realPath = fs.realpathSync(tokenPath);
+      } catch (e: any) {
+        if (e?.code === 'ENOENT') {
+          // Dangling symlink: target doesn't exist yet. readlinkSync returns the
+          // link target as stored, which may be RELATIVE — and a relative path is
+          // resolved against the process cwd, not the link's own directory. Resolve
+          // it against the symlink's directory so we write to the intended location.
+          const linkTarget = fs.readlinkSync(tokenPath);
+          realPath = path.isAbsolute(linkTarget)
+            ? linkTarget
+            : path.resolve(path.dirname(tokenPath), linkTarget);
+        } else {
+          throw e;
+        }
+      }
+      // Deliberate: no temp-file+rename here. Renaming over a symlink replaces the
+      // link itself (the bug this branch fixes), so we write through to the target
+      // directly. This trades atomicity for correct persistent-volume behavior — a
+      // crash mid-write could leave the target .env partially written.
+      fs.writeFileSync(realPath, newContent, { mode: 0o600 });
+    } else {
+      // Atomic write: write to a sibling temp file, then rename. On POSIX
+      // rename is atomic within the same filesystem, so a crash mid-write
+      // cannot leave .env half-written or empty.
+      const tmpPath = `${tokenPath}.tmp.${process.pid}`;
+      try {
+        fs.writeFileSync(tmpPath, newContent, { mode: 0o600 });
+        fs.renameSync(tmpPath, tokenPath);
+      } catch (err) {
+        try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
+        throw err;
+      }
+    }
+  }
+
+  private isSymbolicLink(filePath: string): boolean {
     try {
-      fs.writeFileSync(tmpPath, envLines.join('\n'), { mode: 0o600 });
-      fs.renameSync(tmpPath, tokenPath);
-    } catch (err) {
-      try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
-      throw err;
+      return fs.lstatSync(filePath).isSymbolicLink();
+    } catch {
+      return false;
     }
   }
 
