@@ -1,0 +1,17 @@
+[
+ {
+  "claim": "fetchall-stock-defect",
+  "passed": true,
+  "detail": "stock returned 1000 of 1100 (defect reproduced)"
+ },
+ {
+  "claim": "absence-batch_request",
+  "passed": true,
+  "detail": "McpToolError: MCP tool 'batch_request' failed or timed out after 120s (MCP error -32602: Tool batch_request not found)"
+ },
+ {
+  "claim": "absence-query_entity",
+  "passed": true,
+  "detail": "McpToolError: MCP tool 'query_entity' failed or timed out after 120s (MCP error -32602: Tool query_entity not found)"
+ }
+]

@@ -1,0 +1,67 @@
+[
+ {
+  "claim": "seed",
+  "passed": true,
+  "detail": "corpus already at 1116 >= 1100"
+ },
+ {
+  "claim": "fetchall-fork",
+  "passed": true,
+  "detail": "fork returned 1116 of 1116"
+ },
+ {
+  "claim": "validation-duplicate-bid",
+  "passed": true,
+  "detail": "Error in batch_request: duplicate bId 'x' \u2014 bIds must be unique to match responses to requests"
+ },
+ {
+  "claim": "validation-over-30-items",
+  "passed": true,
+  "detail": "McpToolError: MCP tool 'batch_request' failed or timed out after 120s (MCP error -32602: Invalid arguments for"
+ },
+ {
+  "claim": "validation-query-mutate-hybrid",
+  "passed": true,
+  "detail": "Error in batch_request: BatchItem h: 'query' is mutually exclusive with operation/entity_type/entity/optionsDa"
+ },
+ {
+  "claim": "validation-payload-less-mutate",
+  "passed": true,
+  "detail": "Error in batch_request: BatchItem m: must include either 'query' or all of {operation, entity_type, entity}"
+ },
+ {
+  "claim": "validation-limit-zero",
+  "passed": true,
+  "detail": "McpToolError: MCP tool 'query_entity' failed or timed out after 120s (MCP error -32602: Invalid arguments for "
+ },
+ {
+  "claim": "validation-limit-1001",
+  "passed": true,
+  "detail": "McpToolError: MCP tool 'query_entity' failed or timed out after 120s (MCP error -32602: Invalid arguments for "
+ },
+ {
+  "claim": "validation-unknown-entity",
+  "passed": true,
+  "detail": "Error querying NotAnEntity: Unsupported entity 'NotAnEntity'. Known: Account, Attachable, Bill, BillPayment, B"
+ },
+ {
+  "claim": "faults-isolation",
+  "passed": true,
+  "detail": "29 created, 1 item fault(s)"
+ },
+ {
+  "claim": "faults-cleanup-delete",
+  "passed": true,
+  "detail": "batch-deleted 29/29"
+ },
+ {
+  "claim": "pagination-id-ordered",
+  "passed": true,
+  "detail": "pages 1000+116, ordered=True, distinct=True, union==1116: True"
+ },
+ {
+  "claim": "tombstone-probe (informational)",
+  "passed": true,
+  "detail": "/batch view 89 vs /query view 89 accounts (no tombstones yet \u2014 realm never reset)"
+ }
+]
