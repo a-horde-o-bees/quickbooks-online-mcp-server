@@ -238,6 +238,44 @@ async def claim_pagination(caller, report: Report, total: int) -> None:
                f"distinct={distinct}, union=={total}: {complete}")
 
 
+async def claim_vendor_passthrough(caller, report: Report, server: str) -> None:
+    """Vendor schema strip: stock's strict 6-field schema silently drops valid
+    QBO Vendor fields; the fork's typed+passthrough schema persists them.
+    Probes are fields QBO verifiably STORES: AcctNum, BillAddr.Line2, and
+    PrintOnCheckName with a value different from DisplayName (QBO auto-fills
+    it from DisplayName, so only a custom value is probative). Vendor has no
+    Notes field — QBO discards it regardless of schema (probe-verified
+    2026-07-27; pipeline/_pull_spec.py) — so Notes is no probe here."""
+    import time
+
+    from qbo_pipeline._mcp_client import extract_single_json
+    name = f"ITEST Vendor {server} {int(time.time())}"
+    sent = {
+        "DisplayName": name,
+        "CompanyName": "ITEST Co",
+        "PrintOnCheckName": "ITEST CUSTOM CHECK NAME",
+        "AcctNum": "IT-001",
+        "BillAddr": {"Line1": "1 Test Way", "Line2": "Suite 2", "Line3": "Dock 3",
+                     "City": "Newark", "CountrySubDivisionCode": "NJ", "PostalCode": "07102"},
+    }
+    created = extract_single_json(await caller("create_vendor", {"vendor": sent}))
+    got_acct = created.get("AcctNum")
+    got_check = created.get("PrintOnCheckName")
+    got_line2 = (created.get("BillAddr") or {}).get("Line2")
+    detail = (f"AcctNum={got_acct!r} PrintOnCheckName={got_check!r} "
+              f"BillAddr.Line2={got_line2!r}")
+    if server == "stock":
+        # QBO auto-fills PrintOnCheckName (from CompanyName when present, else
+        # DisplayName): the strip shows as our custom value not surviving.
+        stripped = not got_acct and got_check != sent["PrintOnCheckName"] and not got_line2
+        report.add("vendor-strip-stock-defect", stripped,
+                   f"{detail} (silent strip {'reproduced' if stripped else 'NOT reproduced'})")
+    else:
+        kept = (got_acct == sent["AcctNum"] and got_check == sent["PrintOnCheckName"]
+                and got_line2 == "Suite 2")
+        report.add("vendor-passthrough-fork", kept, detail)
+
+
 async def claim_tombstone_probe(caller, report: Report) -> None:
     from qbo_pipeline._mcp_client import extract_search_records
     live = len(await _query_all(caller, "Account"))
@@ -267,12 +305,14 @@ async def _run(server: str, report: Report) -> None:
             await claim_faults(caller, report)
             total = len(await _query_all(caller, "Payment"))
             await claim_pagination(caller, report, total)
+            await claim_vendor_passthrough(caller, report, server)
             await claim_tombstone_probe(caller, report)
         else:
             # total from the realm itself is unavailable to stock (no query_entity);
             # the fork run's corpus target is the floor
             await claim_fetchall(caller, report, server, SEED_TARGET)
             await claim_absence(caller, report)
+            await claim_vendor_passthrough(caller, report, server)
 
 
 def main() -> int:

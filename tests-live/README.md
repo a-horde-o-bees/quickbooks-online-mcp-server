@@ -48,6 +48,7 @@ cd quickbooks-online-mcp-server-<sha> && npm ci && npm run build
 | `validation` — batch surface self-limiting | n/a | duplicate `bId`, >30 items, query/mutate hybrid, payload-less mutate, `limit` 0/1001, unknown entity: each **rejected with an actionable error, never clamped or truncated** |
 | `faults` — per-item isolation | n/a | a 30-item batch with one bad item: 29 land, 1 item-level fault; the 29 batch-delete cleanly |
 | `pagination` — `query_entity` | n/a | Id-ordered pages, no duplicates or gaps across page boundaries, union == total |
+| `vendor-strip` — create-vendor field fidelity | valid Vendor fields outside the strict 6-field schema (`AcctNum`, custom `PrintOnCheckName`, `BillAddr.Line2/3`) are **silently stripped** before the API call | typed + `.passthrough()` schema persists every QBO-storable field, verified on the created record (`Notes` is no probe — QBO's Vendor entity discards it regardless of schema) |
 | `tombstones` (informational) | — | `query_entity` (`/batch`) vs `search_accounts` (`/query`) Account populations; equal on a never-reset realm, diverging after a UI "Clear data and reset" (browser-only — run it to arm this claim) |
 
 Deferred from live scope (already proven elsewhere):

@@ -13,5 +13,10 @@
   "claim": "absence-query_entity",
   "passed": true,
   "detail": "McpToolError: MCP tool 'query_entity' failed or timed out after 120s (MCP error -32602: Tool query_entity not found)"
+ },
+ {
+  "claim": "vendor-strip-stock-defect",
+  "passed": true,
+  "detail": "AcctNum=None PrintOnCheckName='ITEST Co' BillAddr.Line2=None (silent strip reproduced)"
  }
 ]

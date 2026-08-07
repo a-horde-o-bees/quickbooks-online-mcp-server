@@ -60,6 +60,11 @@
   "detail": "pages 1000+116, ordered=True, distinct=True, union==1116: True"
  },
  {
+  "claim": "vendor-passthrough-fork",
+  "passed": true,
+  "detail": "AcctNum='IT-001' PrintOnCheckName='ITEST CUSTOM CHECK NAME' BillAddr.Line2='Suite 2'"
+ },
+ {
   "claim": "tombstone-probe (informational)",
   "passed": true,
   "detail": "/batch view 89 vs /query view 89 accounts (no tombstones yet \u2014 realm never reset)"
