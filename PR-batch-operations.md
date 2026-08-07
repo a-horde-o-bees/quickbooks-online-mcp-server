@@ -1,6 +1,6 @@
 # Upstream PR draft — batch operations
 
-Branch: `batch-operations` (fork `a-horde-o-bees/quickbooks-online-mcp-server`, commit `e9c3d5f`, based on `upstream/main` @ `def3687`).
+Branch: `batch-operations` (fork `a-horde-o-bees/quickbooks-online-mcp-server`, commit `56df418`, rebased on `upstream/main` @ `0993518`; pushed to the fork 2026-08-07).
 Submission steps per upstream `CONTRIBUTING.md`: file (or reference) a feature issue first, push the branch to the fork (`git push origin batch-operations`), then open the PR from the GitHub UI. The commit message should gain the issue number once one exists (amend or note in the PR body).
 
 ---
@@ -30,5 +30,5 @@ Two tools exposing the QBO `/batch` endpoint, which the server does not currentl
 ## Testing
 
 - 35 unit tests across the two handlers; every added file at 100% statement/branch/function/line coverage.
-- Full suite green on top of current `main` (492 tests).
-- Note: `src/clients/quickbooks-client.ts` coverage (73%) is pre-existing on `main` and untouched here.
+- Full suite green on top of current `main` (639 tests).
+- Live-verified against a QBO sandbox (2026-08-07): a 1,116-payment corpus seeded through `batch_request` itself (37 batches, 0 faults, ~1,000 ops/min); `query_entity` paginated it Id-ordered with no duplicates or gaps; a 30-item batch with one bad item landed 29 with one item-level fault and the 29 batch-deleted cleanly; every malformed-input case (duplicate `bId`, >30 items, query/mutate hybrid, payload-less mutate, out-of-range limit, unknown entity) rejected with an actionable error before any API call.
