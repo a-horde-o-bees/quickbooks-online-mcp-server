@@ -30,10 +30,10 @@ export async function searchQuickbooksPayments(data: SearchPaymentsInput): Promi
       criteria.push({ field: "limit", value: data.limit });
     }
     if (data.offset) {
-      criteria.offset = data.offset;
+      criteria.push({ field: "offset", value: data.offset });
     }
     if (data.fetchAll) {
-      criteria.fetchAll = true;
+      criteria.push({ field: "fetchAll", value: true });
     }
 
     return new Promise((resolve) => {

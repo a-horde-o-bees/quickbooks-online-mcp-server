@@ -316,8 +316,10 @@ describe('Payment Handlers', () => {
       const result = await searchQuickbooksPayments({ offset: 101, fetchAll: true });
 
       expect(result.isError).toBe(false);
-      expect(seen.offset).toBe(101);
-      expect(seen.fetchAll).toBe(true);
+      // node-quickbooks array-criteria format: pagination options ride as
+      // {field, value} entries beside the filters (as limit already does)
+      expect(seen).toContainEqual({ field: 'offset', value: 101 });
+      expect(seen).toContainEqual({ field: 'fetchAll', value: true });
     });
   });
 });
