@@ -50,6 +50,19 @@ Executed 2026-06-02: overlays replayed as native commits on `26c80d4`, merged `u
 
 Caught up 2026-06-02: merged `upstream/main` again to `8328e89` (9 more commits — attachable upload, CRUD restriction mode, P&L Classes, per-call token refresh #41). Only `client.ts` overlapped; adopted upstream's `getInstance()` per-call-refresh client and re-applied `force-reauth` (still needed — #41 fixes empty-env-var OAuth loops, not server-side-invalidated-token recovery). Then collapsed `vendor-tools` to schema-relax only: upstream PR #22 now does the `args.params` unwrap, so `get-vendor` reverts fully to upstream and `create`/`update-vendor` keep only the `z.any()` relax. Fork is current with Intuit upstream; overlays minimal.
 
+## Vendor schemas: typed + passthrough, not `z.any()` (supersedes the schema-relax)
+
+Replace the `vendor-tools` `z.any()` relax with upstream's typed create/update-vendor schemas extended by `BillAddr.Line2`/`Line3` and `.passthrough()` at every object level. User-ratified 2026-08-07: upstream's direction is *stricter* schemas (merged #80 replaced JE `z.any()` with real Zod; open #98 asks for more create-tool validation), so maintaining a relax patch swims against every forward-merge and hides what the tools actually accept.
+
+Why this shape and not the alternatives:
+
+- **The relax existed to defeat silent stripping, not to skip validation.** Upstream's 6-field vendor schema silently strips valid QBO Vendor fields the projection carries — `Active`, `PrintOnCheckName`, `AcctNum`, `Notes` (the pull's identity anchor), `BillAddr.Line2`/`Line3`. (The bulk push routes vendors through `batch_request`, which has no per-entity schema — so the strip bites single-record tool callers, e.g. repairs and generic MCP clients, not the migration's batch path.) Upstream's maintainer fixed this exact defect class on create-journal-entry with `.passthrough()` (`bef85c4`, "so valid QBO fields aren't stripped"), and open PR #108 proposes typed additions + `.passthrough()` for create-vendor — so typed + passthrough is the house pattern, and our overlay now converges with it (the eventual #108 merge collapses to their version).
+- **Rejected — keep `z.any()`:** validates nothing, documents nothing, and reads as the opposite of upstream's tightening direction on every merge.
+- **Rejected — conform the pipeline by sending only upstream's 6 fields:** silently dropping `Notes` breaks the pull's identity binding, and dropping recorded master data (`Active`, `AcctNum`) is the omission form of the data-honesty violation. The pipeline's payload is correct; the schema was the defect.
+- **No separate upstream PR:** #108 already carries the fix upstream; if it dies, a narrow `.passthrough()`-per-`bef85c4` PR is the fallback candidate.
+
+Verified 2026-08-07: `tsc` clean, `npm test` 26/26 suites / 494 tests green on the rewritten schemas.
+
 ## Upstream is authoritative for the API surface, not for correctness or convention
 
 Treat Intuit's server as the source of QBO *coverage* — which entities and operations exist — but never assume its tools are correct or internally consistent. Verify behavior against our own probes/audits before depending on it; fix what's deficient.
