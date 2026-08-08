@@ -306,6 +306,8 @@ async def _run(server: str, report: Report) -> None:
             total = len(await _query_all(caller, "Payment"))
             await claim_pagination(caller, report, total)
             await claim_vendor_passthrough(caller, report, server)
+            from cycle import run_cycle
+            await run_cycle(caller, report, _query_all)
             await claim_tombstone_probe(caller, report)
         else:
             # total from the realm itself is unavailable to stock (no query_entity);

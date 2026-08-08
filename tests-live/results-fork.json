@@ -65,6 +65,31 @@
   "detail": "AcctNum='IT-001' PrintOnCheckName='ITEST CUSTOM CHECK NAME' BillAddr.Line2='Suite 2'"
  },
  {
+  "claim": "cycle-masters",
+  "passed": true,
+  "detail": "Vendor 66, Item 25 created via batch"
+ },
+ {
+  "claim": "cycle-create",
+  "passed": true,
+  "detail": "9 transaction types created via batch_request (incl. linked Payment/BillPayment)"
+ },
+ {
+  "claim": "cycle-readback",
+  "passed": true,
+  "detail": "all 9 types readable via query_entity"
+ },
+ {
+  "claim": "cycle-reports",
+  "passed": true,
+  "detail": "P&L / BS / TB / AR / AP deltas all exact"
+ },
+ {
+  "claim": "cycle-cleanup",
+  "passed": true,
+  "detail": "all 9 batch-deleted in link order"
+ },
+ {
   "claim": "tombstone-probe (informational)",
   "passed": true,
   "detail": "/batch view 89 vs /query view 89 accounts (no tombstones yet \u2014 realm never reset)"
